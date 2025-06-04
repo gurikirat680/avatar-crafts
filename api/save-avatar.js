@@ -1,3 +1,5 @@
+// File: api/save-avatar.js
+
 import fetch from 'node-fetch';
 
 export default async function handler(req, res) {
@@ -8,38 +10,40 @@ export default async function handler(req, res) {
   const { customerId, avatarUrl } = req.body;
 
   if (!customerId || !avatarUrl) {
-    return res.status(400).json({ error: 'Missing required fields' });
+    return res.status(400).json({ error: 'Missing customerId or avatarUrl' });
   }
 
-  const { SHOPIFY_STORE_DOMAIN, SHOPIFY_ADMIN_ACCESS_TOKEN, SHOPIFY_API_VERSION } = process.env;
+  const domain = process.env.SHOPIFY_STORE_DOMAIN;
+  const token = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+  const version = process.env.SHOPIFY_API_VERSION || '2024-01';
 
-  const shopifyUrl = `https://${SHOPIFY_STORE_DOMAIN}/admin/api/${SHOPIFY_API_VERSION}/customers/${customerId}/metafields.json`;
+  const url = `https://${domain}/admin/api/${version}/customers/${customerId}.json`;
 
   try {
-    const response = await fetch(shopifyUrl, {
-      method: 'POST',
+    const response = await fetch(url, {
+      method: 'PUT',
       headers: {
-        'X-Shopify-Access-Token': SHOPIFY_ADMIN_ACCESS_TOKEN,
+        'X-Shopify-Access-Token': token,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        metafield: {
-          namespace: 'avatar',
-          key: 'url',
-          type: 'url',
-          value: avatarUrl,
+        customer: {
+          id: customerId,
+          note: `Avatar URL: ${avatarUrl}`,
         },
       }),
     });
 
+    const data = await response.json();
+
     if (!response.ok) {
-      const errorData = await response.json();
-      return res.status(response.status).json({ error: errorData.errors || 'Shopify request failed' });
+      console.error('Shopify API error:', data);
+      return res.status(500).json({ error: 'Failed to update customer note' });
     }
 
-    return res.status(200).json({ success: true });
-  } catch (error) {
-    return res.status(500).json({ error: error.message });
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error('Unexpected error:', err);
+    return res.status(500).json({ error: 'Unexpected server error' });
   }
 }
-
