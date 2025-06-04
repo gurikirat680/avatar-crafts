@@ -1,60 +1,60 @@
-import fetch from 'node-fetch';
+import fetch from "node-fetch";
 
 export default async function handler(req, res) {
-  // ✅ CORS HEADERS
+  // ✅ Add CORS headers
   res.setHeader("Access-Control-Allow-Origin", "https://www.lilliputcrafts.com");
   res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  // ✅ Handle preflight OPTIONS request
+  // ✅ Handle preflight (CORS) request
   if (req.method === "OPTIONS") {
     return res.status(200).end();
   }
 
-  if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method Not Allowed' });
-  }
-
-  const { customerId, avatarUrl } = req.body;
-
-  if (!customerId || !avatarUrl) {
-    return res.status(400).json({ error: 'Missing customerId or avatarUrl' });
+  // ✅ Continue only for POST requests
+  if (req.method !== "POST") {
+    return res.status(405).json({ error: "Method not allowed" });
   }
 
   try {
-    const shop = process.env.SHOPIFY_STORE_DOMAIN;
-    const accessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
-    const apiVersion = process.env.SHOPIFY_API_VERSION;
+    const { customerId, avatarUrl } = req.body;
 
-    const metafieldData = {
+    if (!customerId || !avatarUrl) {
+      return res.status(400).json({ error: "Missing customerId or avatarUrl" });
+    }
+
+    const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
+    const accessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+    const apiVersion = process.env.SHOPIFY_API_VERSION || "2024-01";
+
+    const metafieldPayload = {
       metafield: {
         namespace: "custom",
         key: "avatar_url",
         type: "url",
-        value: avatarUrl
-      }
+        value: avatarUrl,
+      },
     };
 
-    const response = await fetch(`https://${shop}/admin/api/${apiVersion}/customers/${customerId}/metafields.json`, {
-      method: 'POST',
+    const shopifyUrl = `https://${storeDomain}/admin/api/${apiVersion}/customers/${customerId}/metafields.json`;
+
+    const shopifyResponse = await fetch(shopifyUrl, {
+      method: "POST",
       headers: {
-        'Content-Type': 'application/json',
-        'X-Shopify-Access-Token': accessToken
+        "X-Shopify-Access-Token": accessToken,
+        "Content-Type": "application/json",
       },
-      body: JSON.stringify(metafieldData)
+      body: JSON.stringify(metafieldPayload),
     });
 
-    const result = await response.json();
-
-    if (!response.ok) {
-      console.error('Shopify Error:', result);
-      throw new Error(result.errors || 'Shopify API error');
+    if (!shopifyResponse.ok) {
+      const errorDetails = await shopifyResponse.text();
+      return res.status(shopifyResponse.status).json({ error: "Shopify API error", details: errorDetails });
     }
 
-    return res.status(200).json({ success: true, metafield: result.metafield });
-
-  } catch (err) {
-    console.error("Server error:", err);
-    return res.status(500).json({ error: 'Internal Server Error' });
+    const data = await shopifyResponse.json();
+    return res.status(200).json({ message: "Avatar URL saved", metafield: data.metafield });
+  } catch (error) {
+    return res.status(500).json({ error: "Server error", details: error.message });
   }
 }
