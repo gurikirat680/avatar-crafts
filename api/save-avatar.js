@@ -1,60 +1,48 @@
+import dotenv from "dotenv";
 import fetch from "node-fetch";
 
+dotenv.config();
+
 export default async function handler(req, res) {
-  // ✅ Add CORS headers
-  res.setHeader("Access-Control-Allow-Origin", "https://www.lilliputcrafts.com");
-  res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
-  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
-
-  // ✅ Handle preflight (CORS) request
-  if (req.method === "OPTIONS") {
-    return res.status(200).end();
-  }
-
-  // ✅ Continue only for POST requests
   if (req.method !== "POST") {
+    res.setHeader("Access-Control-Allow-Origin", "*");
     return res.status(405).json({ error: "Method not allowed" });
   }
 
+  res.setHeader("Access-Control-Allow-Origin", "*");
+  res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+
+  const { customerId, avatarUrl } = req.body;
+
+  if (!customerId || !avatarUrl) {
+    return res.status(400).json({ error: "Missing data" });
+  }
+
   try {
-    const { customerId, avatarUrl } = req.body;
+    const shop = process.env.SHOPIFY_STORE;
+    const token = process.env.SHOPIFY_ADMIN_TOKEN;
 
-    if (!customerId || !avatarUrl) {
-      return res.status(400).json({ error: "Missing customerId or avatarUrl" });
-    }
+    const response = await fetch(
+      `https://${shop}/admin/api/2023-07/customers/${customerId}.json`,
+      {
+        method: "PUT",
+        headers: {
+          "Content-Type": "application/json",
+          "X-Shopify-Access-Token": token,
+        },
+        body: JSON.stringify({
+          customer: {
+            id: customerId,
+            note: avatarUrl,
+          },
+        }),
+      }
+    );
 
-    const storeDomain = process.env.SHOPIFY_STORE_DOMAIN;
-    const accessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
-    const apiVersion = process.env.SHOPIFY_API_VERSION || "2024-01";
-
-    const metafieldPayload = {
-      metafield: {
-        namespace: "custom",
-        key: "avatar_url",
-        type: "url",
-        value: avatarUrl,
-      },
-    };
-
-    const shopifyUrl = `https://${storeDomain}/admin/api/${apiVersion}/customers/${customerId}/metafields.json`;
-
-    const shopifyResponse = await fetch(shopifyUrl, {
-      method: "POST",
-      headers: {
-        "X-Shopify-Access-Token": accessToken,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(metafieldPayload),
-    });
-
-    if (!shopifyResponse.ok) {
-      const errorDetails = await shopifyResponse.text();
-      return res.status(shopifyResponse.status).json({ error: "Shopify API error", details: errorDetails });
-    }
-
-    const data = await shopifyResponse.json();
-    return res.status(200).json({ message: "Avatar URL saved", metafield: data.metafield });
-  } catch (error) {
-    return res.status(500).json({ error: "Server error", details: error.message });
+    const data = await response.json();
+    return res.status(200).json({ success: true, data });
+  } catch (err) {
+    console.error(err);
+    return res.status(500).json({ error: "Server error" });
   }
 }
